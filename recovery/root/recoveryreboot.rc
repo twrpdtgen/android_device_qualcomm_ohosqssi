@@ -1,0 +1,8 @@
+service carreboot /system/bin/recoveryreboot
+    user root
+    group root
+    disabled
+    oneshot
+    writepid /dev/stune/top-app/tasks
+    seclabel u:r:RecoveryCarReboot:s0
+

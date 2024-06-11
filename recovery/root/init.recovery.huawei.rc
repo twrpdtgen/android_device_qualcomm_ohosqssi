@@ -1,0 +1,485 @@
+on early-init
+    exec u:r:vendor_modprobe:s0 -- /vendor/bin/vendor_modprobe.sh
+    exec u:r:vendor_modprobe:s0 -- /vendor/bin/modprobe -a -d /vendor/lib/modules q6_pdr_dlkm q6_notifier_dlkm snd_event_dlkm apr_dlkm adsp_loader_dlkm
+    write /proc/sys/kernel/sched_boost 1
+    wait /sys/devices/soc0/soc_id
+
+on init
+    mkdir /cust
+    mkdir /log
+    mkdir /newsys
+    mkdir /usb
+    mkdir /persist 0771 system system
+    mkdir /firmware 0771 system system
+    chown system system /sys/class/usbswitch/usbsw/swstate
+    chown system system /sys/class/android_usb/android0/switch_request
+    chmod 0664 /sys/class/android_usb/android0/switch_request
+
+    wait /dev/block/platform/soc/${ro.boot.bootdevice}
+    symlink /dev/block/platform/soc/${ro.boot.bootdevice} /dev/block/bootdevice
+    symlink_dev system /dev/block/bootdevice/by-name/system
+    symlink_dev hw_product /dev/block/bootdevice/by-name/hw_product
+    symlink_dev cust /dev/block/bootdevice/by-name/cust
+    symlink_dev vendor /dev/block/bootdevice/by-name/vendor
+    symlink_dev odm /dev/block/bootdevice/by-name/odm
+    write /sys/module/hw_nve/parameters/nve /dev/block/bootdevice/by-name/nvme
+    mount /tmp /tmp tmpfs
+    # change nve device visit permission
+    wait /dev/nve0
+    chmod 0640 /dev/nve0
+
+    # Mount binderfs
+    mkdir /dev/binderfs
+    mount binder binder /dev/binderfs stats=global
+    chmod 0755 /dev/binderfs
+
+    symlink /dev/binderfs/binder /dev/binder
+    symlink /dev/binderfs/hwbinder /dev/hwbinder
+    symlink /dev/binderfs/vndbinder /dev/vndbinder
+
+    chmod 0666 /dev/binderfs/hwbinder
+    chmod 0666 /dev/binderfs/binder
+    chmod 0666 /dev/binderfs/vndbinder
+
+on early-fs
+    wait /dev/block/bootdevice/by-name/oeminfo
+    start oeminfo_nvm
+    # for ddr inspect, must be after oeminfo_nvm
+    start ddr_inspect
+
+on fs
+    mount ext4 /dev/block/bootdevice/by-name/log /log
+    restorecon /log
+    chmod 775 /log
+    chown root system /log
+    chown logd logd /system/bin/logd
+    mkdir /log/recovery
+    restorecon /vendor/firmware_mnt
+    chmod 0660 /sys/class/hw_power/charger/charge_data/iin_thermal
+    chown system system /sys/class/hw_power/charger/charge_data/iin_thermal
+
+#for usb port
+    write /sys/class/android_usb/android0/iSerial ${ro.serialno}
+    mount configfs none /config
+    mkdir /config/usb_gadget/g1 0770 shell shell
+    mkdir /config/usb_gadget/g1/strings/0x409 0770 shell shell
+    write /config/usb_gadget/g1/bcdUSB 0x0200
+    write /config/usb_gadget/g1/os_desc/use 1
+    write /config/usb_gadget/g1/strings/0x409/serialnumber ${ro.serialno}
+    write /config/usb_gadget/g1/strings/0x409/manufacturer ${ro.product.manufacturer}
+    write /config/usb_gadget/g1/strings/0x409/product ${ro.product.model}
+    mkdir /config/usb_gadget/g1/functions/mass_storage.0
+    mkdir /config/usb_gadget/g1/functions/mtp.gs0
+    mkdir /config/usb_gadget/g1/functions/ptp.gs1
+    mkdir /config/usb_gadget/g1/functions/accessory.gs2
+    mkdir /config/usb_gadget/g1/functions/audio_source.gs3
+    mkdir /config/usb_gadget/g1/functions/midi.gs5
+    mkdir /config/usb_gadget/g1/functions/ffs.adb
+    mkdir /config/usb_gadget/g1/functions/ffs.diag
+    mkdir /config/usb_gadget/g1/functions/ffs.diag_mdm
+    mkdir /config/usb_gadget/g1/functions/ffs.diag_mdm2
+    mkdir /config/usb_gadget/g1/functions/diag.diag
+    mkdir /config/usb_gadget/g1/functions/diag.diag_mdm
+    mkdir /config/usb_gadget/g1/functions/diag.diag_mdm2
+    mkdir /config/usb_gadget/g1/functions/cser.dun.0
+    mkdir /config/usb_gadget/g1/functions/cser.nmea.1
+    mkdir /config/usb_gadget/g1/functions/cser.dun.2
+    mkdir /config/usb_gadget/g1/functions/gsi.rmnet
+    mkdir /config/usb_gadget/g1/functions/gsi.rndis
+    mkdir /config/usb_gadget/g1/functions/gsi.dpl
+    mkdir /config/usb_gadget/g1/functions/qdss.qdss
+    mkdir /config/usb_gadget/g1/functions/qdss.qdss_mdm
+    mkdir /config/usb_gadget/g1/functions/rndis_bam.rndis
+    mkdir /config/usb_gadget/g1/functions/rmnet_bam.rmnet
+    mkdir /config/usb_gadget/g1/functions/rmnet_bam.dpl
+    mkdir /config/usb_gadget/g1/functions/ncm.0
+    mkdir /config/usb_gadget/g1/functions/ccid.ccid
+    mkdir /config/usb_gadget/g1/configs/b.1 0770 shell shell
+    mkdir /config/usb_gadget/g1/configs/b.1/strings/0x409 0770 shell shell
+    write /config/usb_gadget/g1/os_desc/b_vendor_code 0x1
+    write /config/usb_gadget/g1/os_desc/qw_sign "MSFT100"
+    symlink /config/usb_gadget/g1/configs/b.1 /config/usb_gadget/g1/os_desc/b.1
+    mkdir /dev/usb-ffs 0775 shell system
+    mkdir /dev/usb-ffs/adb 0770 shell system
+    mount functionfs adb /dev/usb-ffs/adb uid=2000,gid=2000
+    mkdir /dev/ffs-diag 0770 shell system
+    mount functionfs diag /dev/ffs-diag uid=2000,gid=1000,rmode=0770,fmode=0660,no_disconnect=1
+    mkdir /dev/ffs-diag-1 0770 shell system
+    mount functionfs diag_mdm /dev/ffs-diag-1 uid=2000,gid=1000,rmode=0770,fmode=0660,no_disconnect=1
+    mkdir /dev/ffs-diag-2 0770 shell system
+    mount functionfs diag_mdm2 /dev/ffs-diag-2 uid=2000,gid=1000,rmode=0770,fmode=0660,no_disconnect=1
+    chown root shell /dev/usb-ffs
+    write /sys/class/android_usb/android0/f_ffs/aliases adb
+    enable qcom-usb-sh
+
+on post-fs
+    start hwservicemanager
+
+on post-fs-data
+    setprop vold.post_fs_data_done 1
+
+on cust_parse_action
+    cust_parse
+
+on recovery_modem_action
+    recovery_modem
+
+on property:odm.erecovery.qca.wlan.ko=start
+    # For qca_cld3_qca6750 firmware
+    write /sys/kernel/icnss/wpss_boot 1
+    # Enable WLAN cold boot calibration
+    write /sys/devices/platform/soc/b0000000.qcom,cnss-qca6490/fs_ready 1
+    # Load WLAN driver
+    exec_background u:r:vendor_modprobe:s0 -- /vendor/bin/modprobe -a -d /vendor/lib/modules qca_cld3_wlan qca_cld3_qca6750
+
+on property:odm.erecovery.hi3881.wlan.ko=start
+    write /dev/kmsg "start load hiwifi firmware"
+    insmod /vendor/lib/modules/hi3881.ko
+
+on property:odm.androidboot.mount_presist=true
+    restorecon /mnt/vendor
+    mkdir /mnt/vendor/persist
+    chown root system /mnt/vendor/persist
+    chmod 0771 /mnt/vendor/persist
+    wait /dev/block/bootdevice/by-name/persist
+    mount ext4 /dev/block/bootdevice/by-name/persist /mnt/vendor/persist -o rw
+    restorecon_recursive  /mnt/vendor/persist
+    setprop recovery.mount_persist_finish true
+
+on property:odm.androidboot.start_services=true
+    mount ext4 /dev/block/bootdevice/by-name/cache /cache -o rw
+    mount ext4 /dev/block/bootdevice/by-name/log /log
+    restorecon /log
+    chmod 775 /log
+    wait /dev/block/bootdevice/by-name/modem
+    mount vfat /dev/block/bootdevice/by-name/modem /vendor/firmware_mnt ro context=u:object_r:firmware_file:s0,shortname=lower,uid=1000,gid=1000,dmask=227,fmask=337
+    chmod 0750 /vendor/etc/init.qcom.modem_links.sh
+    mount debugfs debugfs /sys/kernel/debug
+    write /sys/kernel/boot_adsp/boot 1
+    start modem_links
+    trigger recovery_modem_action
+    umount /sys/kernel/debug
+    load_system_props
+    setprop recovery.load_finish true
+    setprop recovery.start_svice true
+    usb_init_setting
+
+on property:odm.recovery.start_all_srv=true
+    #for the reason that init cust policy dirs
+    trigger cust_parse_action
+    # Load properties from /system/ + /factory after fs mount. Place
+    # this in another action so that the load will be scheduled after the prior
+    # issued fs triggers have completed.
+    trigger load_all_props_action
+    setprop odm.sys.system.serv run
+    load_hwcust_prop_for_recovery
+    load_persist_props
+    start logd
+
+service rmt_storage /vendor/bin/rmt_storage
+    seclabel u:r:rmt_storage:s0
+    user root
+    disabled
+    oneshot
+
+service oeminfo_nvm /vendor/bin/oeminfo_nvm_server
+    class core
+    critical
+    ioprio rt 4
+    seclabel u:r:oeminfo_nvm:s0
+
+service qseecomd_recov /vendor/bin/qseecomd
+    class core
+    user root
+    group root
+    seclabel u:r:tee:s0
+    disabled
+
+service libqmi_oem_main /vendor/bin/libqmi_oem_main
+    seclabel u:r:libqmi_oem_main:s0
+    user root
+    group root
+    disabled
+
+service irsc_util /vendor/bin/irsc_util "/etc/sec_config"
+    seclabel u:r:irsc_util:s0
+    class main
+    user root
+    disabled
+    oneshot
+
+on property:recovery.start_svice=true
+    #start vendor_wcnss
+    start rmt_storage
+    start libqmi_oem_main
+    start irsc_util
+    start vendor.diag-router
+    start hw_diag_server
+
+on property:odm.recovery.stop_rmt_storage=true
+    stop rmt_storage
+
+on property:odm.recovery.start_all_srv=true
+    start xlogctl_service
+    start xlogview_service
+    start qseecomd_recov
+    start keymaster-3-0
+    start qteeconnector-hal-1-0
+
+on property:odm.recovery.start_all_srv=false
+    start xlogctl_service
+    usb_init_setting
+
+on property:factory_reset.stop_srv=true
+    #stop all srv that occupy data when in factory reset
+    stop applogcat
+    stop rillogcat
+    stop sleeplogcat
+
+service wcnss-service /vendor/bin/wcnss_service
+    seclabel u:r:wcnss_service:s0
+    disabled
+    oneshot
+
+service vendor.diag-router /vendor/bin/diag-router
+    class hal
+    user system
+    group system
+    capabilities KILL
+    disabled
+
+service hw_diag_server /vendor/bin/hw_diag_server
+    user root
+    group system oem_2901
+    disabled
+    seclabel u:r:test_diag:s0
+
+on property:odm.erecovery.run.wcnss=start
+    start wcnss-service
+
+on property:androidboot.start_services=true
+    sys_wp_init_action
+
+on property:vold.decrypt=trigger_shutdown_framework
+    class_reset server
+
+on property:vold.decrypt=trigger_load_persist_props
+    load_persist_props
+
+on property:vold.decrypt=trigger_post_fs_data
+    trigger post-fs-data
+
+on boot
+    chown wifi wifi /proc/wifi_built_in/wifi_start
+    chown root root /proc/wifi_built_in/mac_addr_hw
+    chown wifi wifi /proc/wifi_built_in/wifi_status
+    chmod 0660 /proc/wifi_built_in/wifi_start
+    chmod 0660 /proc/wifi_built_in/wifi_status
+    chmod 0660 /proc/wifi_built_in/mac_addr_hw
+    chown system system /proc/wifi_built_in/debug_level_hw
+    setprop sys.usb.configfs 1
+
+on property:ro.boot.cbt_mode=yes
+    start kmsglogcat
+
+service modem_links /system/bin/sh /vendor/etc/init.qcom.modem_links.sh
+    class core
+    oneshot
+    disabled
+    seclabel u:r:shell:s0
+
+service logd /system/bin/logd
+   socket logd stream 0666 logd logd
+   socket logdr seqpacket 0666 logd logd
+   socket logdw dgram 0222 logd logd
+   file /proc/kmsg r
+   file /dev/kmsg w
+   user logd
+   group logd system package_info readproc
+   capabilities SYSLOG AUDIT_CONTROL SETGID
+   disabled
+   seclabel u:r:logd:s0
+
+# Restart adbd so it can run as root
+
+#service hdbd /sbin/hdbd
+service hdbd /sbin/hdbd --root_seclabel=u:r:su:s0
+    class core
+    socket hdbd stream 660 system system
+    disabled
+    seclabel u:r:adbd:s0
+
+# /* USB factory mode configuration */
+on property:ro.boot.usbcontroller=*
+    setprop sys.usb.controller ${ro.boot.usbcontroller}
+
+on property:sys.usb.config=none
+    write /config/usb_gadget/g1/UDC "none"
+    stop adbd
+    setprop sys.usb.ffs.ready 0
+    write /config/usb_gadget/g1/bDeviceClass 0
+    write /config/usb_gadget/g1/bDeviceSubClass 0
+    write /config/usb_gadget/g1/bDeviceProtocol 0
+    rm /config/usb_gadget/g1/configs/b.1/f1
+    rm /config/usb_gadget/g1/configs/b.1/f2
+    rm /config/usb_gadget/g1/configs/b.1/f3
+    rm /config/usb_gadget/g1/configs/b.1/f4
+    rm /config/usb_gadget/g1/configs/b.1/f5
+    rmdir /config/usb_gadget/g1/functions/rndis.gs4
+    setprop sys.usb.state ${sys.usb.config}
+
+on property:sys.usb.config=mass_storage
+    stop adbd
+    write /config/usb_gadget/g1/configs/b.1/strings/0x409/configuration "msc"
+    rm /config/usb_gadget/g1/configs/b.1/f1
+    rm /config/usb_gadget/g1/configs/b.1/f2
+    rm /config/usb_gadget/g1/configs/b.1/f3
+    rm /config/usb_gadget/g1/configs/b.1/f4
+    rm /config/usb_gadget/g1/configs/b.1/f5
+    rm /config/usb_gadget/g1/configs/b.1/f6
+    rm /config/usb_gadget/g1/configs/b.1/f7
+    rm /config/usb_gadget/g1/configs/b.1/f8
+    write /config/usb_gadget/g1/idVendor 0x12d1
+    write /config/usb_gadget/g1/idProduct 0x1037
+    symlink /config/usb_gadget/g1/functions/mass_storage.0 /config/usb_gadget/g1/configs/b.1/f1
+    write /config/usb_gadget/g1/functions/mass_storage.0/lun.0/cdrom 1
+    write /config/usb_gadget/g1/UDC ${sys.usb.controller}
+    setprop sys.usb.state ${sys.usb.config}
+
+on property:sys.usb.config=update,serial,mass_storage,adb  && property:sys.usb.configfs=1
+    start adbd
+    start port-bridge
+
+on property:sys.usb.ffs.ready=1 && property:sys.usb.config=update,serial,mass_storage,adb && property:sys.usb.configfs=1
+    write /config/usb_gadget/g1/configs/b.1/strings/0x409/configuration "dun_diag_adb"
+    rm /config/usb_gadget/g1/configs/b.1/f1
+    rm /config/usb_gadget/g1/configs/b.1/f2
+    rm /config/usb_gadget/g1/configs/b.1/f3
+    rm /config/usb_gadget/g1/configs/b.1/f4
+    rm /config/usb_gadget/g1/configs/b.1/f5
+    rm /config/usb_gadget/g1/configs/b.1/f6
+    rm /config/usb_gadget/g1/configs/b.1/f7
+    rm /config/usb_gadget/g1/configs/b.1/f8
+    write /config/usb_gadget/g1/idVendor 0x12d1
+    write /config/usb_gadget/g1/idProduct 0x107d
+    symlink /config/usb_gadget/g1/functions/cser.dun.0 /config/usb_gadget/g1/configs/b.1/f1
+    symlink /config/usb_gadget/g1/functions/diag.diag /config/usb_gadget/g1/configs/b.1/f2
+    symlink /config/usb_gadget/g1/functions/ffs.adb /config/usb_gadget/g1/configs/b.1/f3
+    symlink /config/usb_gadget/g1/functions/cser.nmea.1 /config/usb_gadget/g1/configs/b.1/f4
+    write /config/usb_gadget/g1/UDC ${sys.usb.controller}
+    setprop sys.usb.state ${sys.usb.config}
+
+on property:sys.usb.config=update,serial
+    stop adbd
+    write /config/usb_gadget/g1/configs/b.1/strings/0x409/configuration "dun"
+    rm /config/usb_gadget/g1/configs/b.1/f1
+    rm /config/usb_gadget/g1/configs/b.1/f2
+    rm /config/usb_gadget/g1/configs/b.1/f3
+    rm /config/usb_gadget/g1/configs/b.1/f4
+    rm /config/usb_gadget/g1/configs/b.1/f5
+    rm /config/usb_gadget/g1/configs/b.1/f6
+    rm /config/usb_gadget/g1/configs/b.1/f7
+    rm /config/usb_gadget/g1/configs/b.1/f8
+    write /config/usb_gadget/g1/idVendor 0x12d1
+    write /config/usb_gadget/g1/idProduct 0x107d
+    symlink /config/usb_gadget/g1/functions/cser.dun.0 /config/usb_gadget/g1/configs/b.1/f1
+    symlink /config/usb_gadget/g1/functions/cser.nmea.1 /config/usb_gadget/g1/configs/b.1/f2
+    write /config/usb_gadget/g1/UDC ${sys.usb.controller}
+    setprop sys.usb.state ${sys.usb.config}
+    start port-bridge
+
+on property:sys.usb.config=manufacture,adb && property:sys.usb.configfs=1
+    stop adbd
+    write /config/usb_gadget/g1/idVendor 0x12d1
+    write /config/usb_gadget/g1/idProduct 0x107d
+    start adbd
+
+on property:sys.usb.ffs.ready=1 && property:sys.usb.config=manufacture,adb && property:sys.usb.configfs=1
+    write /config/usb_gadget/g1/configs/b.1/strings/0x409/configuration "dun_diag_adb"
+    rm /config/usb_gadget/g1/configs/b.1/f1
+    rm /config/usb_gadget/g1/configs/b.1/f2
+    rm /config/usb_gadget/g1/configs/b.1/f3
+    rm /config/usb_gadget/g1/configs/b.1/f4
+    rm /config/usb_gadget/g1/configs/b.1/f5
+    rm /config/usb_gadget/g1/configs/b.1/f6
+    rm /config/usb_gadget/g1/configs/b.1/f7
+    rm /config/usb_gadget/g1/configs/b.1/f8
+    rm /config/usb_gadget/g1/configs/b.1/f9
+    symlink /config/usb_gadget/g1/functions/cser.dun.0 /config/usb_gadget/g1/configs/b.1/f1
+    symlink /config/usb_gadget/g1/functions/${vendor.usb.diag.func.name}.diag /config/usb_gadget/g1/configs/b.1/f2
+    symlink /config/usb_gadget/g1/functions/ffs.adb /config/usb_gadget/g1/configs/b.1/f3
+    write /config/usb_gadget/g1/UDC ${sys.usb.controller}
+    setprop sys.usb.state ${sys.usb.config}
+
+on property:androidboot.aging_test_emmc=true
+    mount ext4 /dev/block/bootdevice/by-name/cache /cache -o rw
+
+service vold_recovery /system/bin/vold \
+        --blkid_context=u:r:blkid:s0 --blkid_untrusted_context=u:r:blkid_untrusted:s0 \
+        --fsck_context=u:r:fsck:s0 --fsck_untrusted_context=u:r:fsck_untrusted:s0
+    class core
+    socket vold stream 0660 root mount
+    socket cryptd stream 0660 root mount
+    ioprio be 2
+    writepid /dev/cpuset/foreground/tasks /dev/blkio/foreground/tasks
+
+# decrypt file fs for /data/update
+on apply_file_decryption
+    wait /dev/block/bootdevice/by-name/userdata
+    #mount f2fs /dev/block/bootdevice/by-name/userdata /data nosuid nodev noatime discard,inline_data,inline_xattr
+    check_file_encrypt
+    umount /data
+
+on property:vold.status=start
+    exec /system/bin/vdc --wait cryptfs enablefilecrypto
+    init_user0
+    unlock_user0_key
+    setprop vold.status end
+
+service hwservicemanager /system/bin/hwservicemanager
+    user system
+    disabled
+    group system readproc
+    onrestart setprop hwservicemanager.ready false
+    seclabel u:r:hwservicemanager:s0
+
+service keymaster-3-0 /vendor/bin/hw/android.hardware.keymaster@3.0-service-qti
+    class early_hal
+    user system
+    group system drmrpc
+
+service qteeconnector-hal-1-0 /vendor/bin/hw/vendor.qti.hardware.qteeconnector@1.0-service
+    class hal
+    user system
+    group system
+    seclabel u:r:vendor_hal_qteeconnector_qti:s0
+
+on post-fs
+    chmod 755 /venodor/bin/wifi_driver_init
+
+service wifi_driver_init /vendor/bin/wifi_driver_init
+    seclabel u:r:wifi_driver_init:s0
+    class late_start
+    user root
+    group root wifi system
+    oneshot
+    disabled
+
+on property:wlan.driver.wcnss_service.state=running
+    start wifi_driver_init
+
+service fmd /vendor/bin/fmd
+    class main
+    user root
+    group system log
+    seclabel u:r:fmdserver:s0
+
+service ddr_inspect /vendor/bin/mmem
+    class main
+    user root
+    group system root log
+    oneshot
+    seclabel u:r:ddr_inspect:s0
+
+on property:odm.androidboot.start_services=true && property:ro.runmode=factory
+    start fmd

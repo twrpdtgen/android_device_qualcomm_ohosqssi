@@ -1,0 +1,7 @@
+on boot && property:ro.build.characteristics=car
+    start RecoveryPowermgrService
+service RecoveryPowermgrService /system/bin/recoverypowermgr
+    class server
+    user root
+    group root readproc
+    seclabel u:r:RecoveryPowermgr:s0
